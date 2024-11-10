@@ -190,6 +190,13 @@ fn trait_methods<'a>(tr: &'a ItemTrait) -> Result<Vec<&'a MethodSig>, Rejections
     Ok(methods)
 }
 
+fn is_type_str(ty: &Type) -> bool {
+    match ty {
+        Type::Path(p) => p.path.is_ident("str"),
+        _ => false,
+    }
+}
+
 // generate code that parses rpc arguments and calls the given method
 fn add_handler(trait_name: &Ident, method: &MethodSig) -> Result<TokenStream, Rejections> {
     let method_name = &method.ident;
@@ -199,14 +206,14 @@ fn add_handler(trait_name: &Ident, method: &MethodSig) -> Result<TokenStream, Re
         let argname_literal = format!("\"{}\"", ident);
         // non-lexical lifetimes make it possible to create a reference to an anonymous owned value
         let prefix = match ty {
-            syn::Type::Reference(_) => quote! { & },
+            Type::Reference(r) if is_type_str(&r.elem) => quote! {},
+            Type::Reference(_) => quote! { & },
             _ => quote! {},
         };
         quote_spanned! { ty.span() => #prefix {
-            let next_arg = ordered_args.next().expect(
+            easy_jsonrpc::util::from_serde_json_value_ref(&ordered_args.next().expect(
                 "RPC method Got too few args. This is a bug." // checked in get_rpc_args
-            );
-            easy_jsonrpc::serde_json::from_value(next_arg).map_err(|_| {
+            )).map_err(|_| {
                 easy_jsonrpc::InvalidArgs::InvalidArgStructure {
                     name: #argname_literal,
                     index: #index,

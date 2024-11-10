@@ -11,6 +11,9 @@ pub trait FrobMachine: Sync + Send {
     fn get_frob_count(&self) -> i32;
     fn frobn(&self, n: i32);
     fn ultimate_frob(&self, froblist: Vec<i32>);
+    fn test_string(&self, s: &str) {
+        eprintln!("Received string: {}", s);
+    }
 }
 
 struct FrobMachineImpl {

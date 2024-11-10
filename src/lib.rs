@@ -204,6 +204,9 @@ use serde::ser::Serialize;
 use serde_json::json;
 use std::{collections::BTreeMap, marker::PhantomData};
 
+#[doc(hidden)]
+pub mod util;
+
 /// Handles jsonrpc requests.
 pub trait Handler {
     /// Type-check params and call method if method exists. This method is implemented automatically
