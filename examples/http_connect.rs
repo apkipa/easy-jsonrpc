@@ -5,7 +5,7 @@ mod common;
 
 use common::frob_machine; // client helpers generated automatically
 use easy_jsonrpc::{BoundMethod, Response};
-use reqwest::Client;
+use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 use serde_json::Value;

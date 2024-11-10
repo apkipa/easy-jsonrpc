@@ -7,7 +7,7 @@ use serde_json::{self, json};
 use std::net::{Ipv6Addr, SocketAddrV6};
 use std::sync::Arc;
 use warp::filters::body::content_length_limit;
-use warp::post2;
+use warp::post;
 use warp::Filter;
 use warp::Reply;
 
@@ -16,7 +16,7 @@ fn main() {
 
     let rpc_handler = Arc::new(create_frob_server());
 
-    let responder = post2()
+    let responder = post()
         .and(content_length_limit(1024 * 32))
         .and(warp::body::json::<serde_json::Value>())
         .map(move |request| {
@@ -32,5 +32,5 @@ fn main() {
 }
 
 fn to_warp_result(json_value: serde_json::Value) -> impl Reply {
-    Ok(warp::reply::json(&json_value))
+    Ok::<_, String>(warp::reply::json(&json_value))
 }

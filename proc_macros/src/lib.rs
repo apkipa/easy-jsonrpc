@@ -220,7 +220,7 @@ fn add_handler(trait_name: &Ident, method: &MethodSig) -> Result<TokenStream, Re
             params.get_rpc_args(&[#(#arg_name_literals),*])
                 .map_err(|a| a.into())?;
         let mut ordered_args = args.drain(..);
-        let res = <#trait_name>::#method_name(self, #(#parse_args),*); // call the target procedure
+        let res = <dyn #trait_name>::#method_name(self, #(#parse_args),*); // call the target procedure
         debug_assert_eq!(ordered_args.next(), None); // parse_args must consume ordered_args
         res
     }})
