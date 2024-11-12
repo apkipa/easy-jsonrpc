@@ -96,7 +96,7 @@ fn impl_server(tr: &ItemTrait) -> Result<TokenStream, Rejections> {
         let handlers = make_handler(false);
         let handlers: Vec<TokenStream> = partition(handlers)?;
         quote! {
-            impl easy_jsonrpc::Handler for dyn #trait_name {
+            impl easy_jsonrpc::Handler for (dyn #trait_name + '_) {
                 fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
                           -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
                     match method {
@@ -112,7 +112,7 @@ fn impl_server(tr: &ItemTrait) -> Result<TokenStream, Rejections> {
         let handlers_deref = make_handler(true);
         let handlers_deref: Vec<TokenStream> = partition(handlers_deref)?;
         quote! {
-            impl easy_jsonrpc::Handler for dyn #trait_name {
+            impl easy_jsonrpc::Handler for (dyn #trait_name + '_) {
                 fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
                           -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
                     match method {
@@ -121,7 +121,7 @@ fn impl_server(tr: &ItemTrait) -> Result<TokenStream, Rejections> {
                     }
                 }
             }
-            impl easy_jsonrpc::Handler for &dyn #trait_name {
+            impl easy_jsonrpc::Handler for &(dyn #trait_name + '_) {
                 fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
                           -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
                     match method {
