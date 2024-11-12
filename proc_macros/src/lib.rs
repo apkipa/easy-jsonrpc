@@ -57,39 +57,77 @@ pub fn rpc(_: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_ma
 
 // if Ok, return token stream, else report error
 fn raise_if_err(res: Result<TokenStream, Rejections>) -> TokenStream {
-    match res {
-        Ok(stream) => stream,
-        Err(rej) => rej.raise(),
-    }
+    res.unwrap_or_else(|rej| rej.raise())
 }
 
 // generate a Handler implementation for &dyn Trait
 fn impl_server(tr: &ItemTrait) -> Result<TokenStream, Rejections> {
     let trait_name = &tr.ident;
     let methods: Vec<&MethodSig> = trait_methods(&tr)?;
-
-    let handlers = methods.iter().map(|method| {
-        let method_literal = method.ident.to_string();
-        let method_return_type_span = return_type_span(&method);
-        let handler = add_handler(trait_name, method)?;
-        let try_serialize = quote_spanned! {
-            method_return_type_span =>
-                easy_jsonrpc::try_serialize(&result)
-        };
-        Ok(quote! { #method_literal => {
-            let result = #handler;
-            #try_serialize
-        }})
+    let methods_has_mut_self = methods.iter().any(|method| {
+        method.decl.inputs.iter().any(|arg| {
+            matches!(
+                arg,
+                FnArg::SelfRef(ArgSelfRef {
+                    mutability: Some(_),
+                    ..
+                })
+            )
+        })
     });
-    let handlers: Vec<TokenStream> = partition(handlers)?;
+    let make_handler = |deref_self: bool| {
+        let handlers = methods.iter().map(move |method| {
+            let method_literal = method.ident.to_string();
+            let method_return_type_span = return_type_span(&method);
+            let handler = add_handler(trait_name, method, deref_self)?;
+            let try_serialize = quote_spanned! {
+                method_return_type_span =>
+                    easy_jsonrpc::try_serialize(&result)
+            };
+            Ok(quote! { #method_literal => {
+                let result = #handler;
+                #try_serialize
+            }})
+        });
+        handlers
+    };
 
-    Ok(quote! {
-        impl easy_jsonrpc::Handler for dyn #trait_name {
-            fn handle(&self, method: &str, params: easy_jsonrpc::Params)
-                      -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
-                match method {
-                    #(#handlers,)*
-                    _ => Err(easy_jsonrpc::Error::method_not_found()),
+    Ok(if methods_has_mut_self {
+        let handlers = make_handler(false);
+        let handlers: Vec<TokenStream> = partition(handlers)?;
+        quote! {
+            impl easy_jsonrpc::Handler for dyn #trait_name {
+                fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
+                          -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
+                    match method {
+                        #(#handlers,)*
+                        _ => Err(easy_jsonrpc::Error::method_not_found()),
+                    }
+                }
+            }
+        }
+    } else {
+        let handlers = make_handler(false);
+        let handlers: Vec<TokenStream> = partition(handlers)?;
+        let handlers_deref = make_handler(true);
+        let handlers_deref: Vec<TokenStream> = partition(handlers_deref)?;
+        quote! {
+            impl easy_jsonrpc::Handler for dyn #trait_name {
+                fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
+                          -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
+                    match method {
+                        #(#handlers,)*
+                        _ => Err(easy_jsonrpc::Error::method_not_found()),
+                    }
+                }
+            }
+            impl easy_jsonrpc::Handler for &dyn #trait_name {
+                fn handle(&mut self, method: &str, params: easy_jsonrpc::Params)
+                          -> Result<easy_jsonrpc::Value, easy_jsonrpc::Error> {
+                    match method {
+                        #(#handlers_deref,)*
+                        _ => Err(easy_jsonrpc::Error::method_not_found()),
+                    }
                 }
             }
         }
@@ -175,7 +213,7 @@ fn return_type(method: &MethodSig) -> Type {
 }
 
 // return all methods in the trait, or reject if trait contains an item that is not a method
-fn trait_methods<'a>(tr: &'a ItemTrait) -> Result<Vec<&'a MethodSig>, Rejections> {
+fn trait_methods(tr: &ItemTrait) -> Result<Vec<&MethodSig>, Rejections> {
     let methods = partition(tr.items.iter().map(|item| match item {
         TraitItem::Method(method) => Ok(&method.sig),
         other => Err(Rejection::create(other.span(), Reason::TraitNotStrictlyMethods).into()),
@@ -198,7 +236,11 @@ fn is_type_str(ty: &Type) -> bool {
 }
 
 // generate code that parses rpc arguments and calls the given method
-fn add_handler(trait_name: &Ident, method: &MethodSig) -> Result<TokenStream, Rejections> {
+fn add_handler(
+    trait_name: &Ident,
+    method: &MethodSig,
+    deref_self: bool,
+) -> Result<TokenStream, Rejections> {
     let method_name = &method.ident;
     let args = get_args(&method.decl)?;
     let arg_name_literals = args.iter().map(|(id, _)| id.to_string());
@@ -222,25 +264,35 @@ fn add_handler(trait_name: &Ident, method: &MethodSig) -> Result<TokenStream, Re
         }}
     });
 
-    Ok(quote! {{
-        let mut args: Vec<easy_jsonrpc::Value> =
-            params.get_rpc_args(&[#(#arg_name_literals),*])
-                .map_err(|a| a.into())?;
-        let mut ordered_args = args.drain(..);
-        let res = <dyn #trait_name>::#method_name(self, #(#parse_args),*); // call the target procedure
-        debug_assert_eq!(ordered_args.next(), None); // parse_args must consume ordered_args
-        res
-    }})
+    if deref_self {
+        Ok(quote! {{
+            let mut args: Vec<easy_jsonrpc::Value> =
+                params.get_rpc_args(&[#(#arg_name_literals),*])
+                    .map_err(|a| a.into())?;
+            let mut ordered_args = args.drain(..);
+            let res = <dyn #trait_name>::#method_name(*self, #(#parse_args),*); // call the target procedure
+            debug_assert_eq!(ordered_args.next(), None); // parse_args must consume ordered_args
+            res
+        }})
+    } else {
+        Ok(quote! {{
+            let mut args: Vec<easy_jsonrpc::Value> =
+                params.get_rpc_args(&[#(#arg_name_literals),*])
+                    .map_err(|a| a.into())?;
+            let mut ordered_args = args.drain(..);
+            let res = <dyn #trait_name>::#method_name(self, #(#parse_args),*); // call the target procedure
+            debug_assert_eq!(ordered_args.next(), None); // parse_args must consume ordered_args
+            res
+        }})
+    }
 }
 
 // Get the name and type of each argument from method. Skip the first argument, which must be &self.
 // If the first argument is not &self, an error will be returned.
-fn get_args<'a>(method: &'a FnDecl) -> Result<Vec<(&'a Ident, &'a Type)>, Rejections> {
+fn get_args(method: &FnDecl) -> Result<Vec<(&Ident, &Type)>, Rejections> {
     let mut inputs = method.inputs.iter();
     match inputs.next() {
-        Some(FnArg::SelfRef(ArgSelfRef {
-            mutability: None, ..
-        })) => Ok(()),
+        Some(FnArg::SelfRef(ArgSelfRef { mutability: _, .. })) => Ok(()),
         Some(a) => Err(Rejection::create(a.span(), Reason::FirstArgumentNotSelfRef)),
         None => Err(Rejection::create(
             method.inputs.span(),

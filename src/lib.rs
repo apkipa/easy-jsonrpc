@@ -47,7 +47,7 @@ impl Adder for AdderImpl {
     fn takes_ref(&self, rf: &isize) {}
 }
 
-let handler = (&AdderImpl {} as &dyn Adder);
+let mut handler = (&AdderImpl {} as &dyn Adder);
 
 assert_eq!(
     handler.handle_request(json!({
@@ -90,7 +90,7 @@ assert_eq!(
 #    }
 #    fn takes_ref(&self, rf: &isize) {}
 # }
-# let handler = (&AdderImpl {} as &dyn Adder);
+# let mut handler = (&AdderImpl {} as &dyn Adder);
 let bind = adder::checked_add(1, 2).unwrap();
 let (call, tracker) = bind.call();
 let json_response = match handler.handle_request(call.as_request()) {
@@ -127,7 +127,7 @@ assert_eq!(tracker.get_return(&mut response).unwrap(), Some(3));
 #    }
 #    fn takes_ref(&self, rf: &isize) {}
 # }
-# let handler = (&AdderImpl {} as &dyn Adder);
+# let mut handler = (&AdderImpl {} as &dyn Adder);
 // Named arguments are handled for free
 assert_eq!(
     handler.handle_request(json!({
@@ -211,10 +211,10 @@ pub mod util;
 pub trait Handler {
     /// Type-check params and call method if method exists. This method is implemented automatically
     /// by the [rpc](../easy_jsonrpc_proc_macro/attr.rpc.html) macro.
-    fn handle(&self, method: &str, params: Params) -> Result<Value, jsonrpc_core::Error>;
+    fn handle(&mut self, method: &str, params: Params) -> Result<Value, jsonrpc_core::Error>;
 
     /// Parses raw_request as a jsonrpc request, handles request according to the jsonrpc spec.
-    fn handle_request(&self, raw_request: Value) -> MaybeReply {
+    fn handle_request(&mut self, raw_request: Value) -> MaybeReply {
         let request: jsonrpc_core::Request = match serde_json::from_value(raw_request) {
             Ok(request) => request,
             Err(_) => {
@@ -244,6 +244,11 @@ pub trait Handler {
             })
         }))
     }
+
+    /// Creates a “by reference” adaptor for this instance of `Handler`.
+    fn by_ref(&self) -> &Self {
+        self
+    }
 }
 
 /// Returned by Handler::handle_request
@@ -269,7 +274,7 @@ impl MaybeReply {
 /// if call is a normal method call, call `handle` and return result
 /// if call is a notification, call `handle` and return None
 /// if call is invalid return a jsonrpc failure
-fn handle_call<S: ?Sized + Handler>(slef: &S, call: jsonrpc_core::Call) -> Option<Output> {
+fn handle_call<S: ?Sized + Handler>(slef: &mut S, call: jsonrpc_core::Call) -> Option<Output> {
     let (method, params, maybe_id, version): (
         String,
         jsonrpc_core::Params,
@@ -311,7 +316,7 @@ fn handle_call<S: ?Sized + Handler>(slef: &S, call: jsonrpc_core::Call) -> Optio
 // Handle a request after it has been successfuly deserialized, this function is private to avoid
 // exposing jsonrpc_core types to the user. Also, it's not needed externally.
 fn handle_parsed_request<S: ?Sized + Handler>(
-    slef: &S,
+    slef: &mut S,
     request: jsonrpc_core::Request,
 ) -> Option<jsonrpc_core::Response> {
     match request {
@@ -1068,7 +1073,7 @@ mod test {
         }
 
         impl Adder for () {}
-        let handler = &() as &dyn Adder;
+        let mut handler = &() as &dyn Adder;
 
         let bind = adder_client::checked_add(1, 2).unwrap();
         let (call, tracker) = bind.call();
@@ -1101,7 +1106,7 @@ mod test {
         }
 
         impl Adder for () {}
-        let handler = &() as &dyn Adder;
+        let mut handler = &() as &dyn Adder;
 
         let bind = adder::checked_add(1, 2).unwrap();
         let (call, tracker) = bind.call();
@@ -1122,7 +1127,7 @@ mod test {
 
     #[test]
     fn client_with_reference_args() {
-        let handler = &AdderImpl {} as &dyn Adder;
+        let mut handler = &AdderImpl {} as &dyn Adder;
 
         let bind = adder::echo_ref(&2).unwrap();
         let (call, tracker) = bind.call();
@@ -1142,7 +1147,7 @@ mod test {
 
     #[test]
     fn response_double_get() {
-        let handler = &AdderImpl as &dyn Adder;
+        let mut handler = &AdderImpl as &dyn Adder;
         use easy_jsonrpc::Call;
         let bind0 = adder::checked_add(0, 0).unwrap();
         let (call0, tracker0) = bind0.call();

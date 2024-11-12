@@ -13,7 +13,7 @@ use std::net::UdpSocket;
 const MAX_IPV4_UDP_DATASIZE: usize = 65_527;
 
 fn main() {
-    let rpc_handler = create_frob_server();
+    let mut rpc_handler = create_frob_server();
     let socket = UdpSocket::bind(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 4444, 0, 0)).unwrap();
     let mut recv_buf = [0u8; MAX_IPV4_UDP_DATASIZE];
     loop {

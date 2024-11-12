@@ -20,7 +20,7 @@ fn main() {
         .and(content_length_limit(1024 * 32))
         .and(warp::body::json::<serde_json::Value>())
         .map(move |request| {
-            let response: MaybeReply = rpc_handler.handle_request(request);
+            let response: MaybeReply = rpc_handler.by_ref().handle_request(request);
             let reply = match response {
                 MaybeReply::Reply(json_val) => json_val,
                 MaybeReply::DontReply => json!(null),

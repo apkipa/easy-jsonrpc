@@ -10,7 +10,7 @@ use std::net::TcpListener;
 use std::time::Duration;
 
 fn main() {
-    let rpc_handler = create_frob_server();
+    let mut rpc_handler = create_frob_server();
     let listener = TcpListener::bind(("0.0.0.0", 4444)).unwrap();
     for stream in listener.incoming().filter_map(|connection| connection.ok()) {
         stream
