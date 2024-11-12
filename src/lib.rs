@@ -246,7 +246,10 @@ pub trait Handler {
     }
 
     /// Creates a “by reference” adaptor for this instance of `Handler`.
-    fn by_ref(&self) -> &Self {
+    fn by_ref(&self) -> &Self
+    where
+        Self: Sized,
+    {
         self
     }
 }
